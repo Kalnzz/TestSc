@@ -1,0 +1,322 @@
+--// Faltix Hub v2
+--// Powered By Attala
+
+local WindUI = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"
+))()
+
+local Window = WindUI:CreateWindow({
+    Title = "Faltix Hub",
+    Icon = "rbxassetid://0",
+    Author = "Powered By Attala",
+    Folder = "FaltixHub_Config",
+    Size = UDim2.fromOffset(580, 460),
+    Transparent = true,
+    Theme = "Crimson",
+    SideBarWidth = 200,
+})
+
+local MainTab = Window:Tab({
+    Title = "Main",
+    Icon = "house",
+})
+
+local MiscTab = Window:Tab({
+    Title = "Misc",
+    Icon = "settings",
+})
+
+--// Services
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+--// State
+local State = {
+    Buy      = false,
+    Upgrade  = false,
+    Fruit    = false,
+    CashDrop = false,
+    Delay    = 0.25
+}
+
+--// Character
+local function GetCharacter()
+    local char = LocalPlayer.Character
+    if not char then
+        char = LocalPlayer.CharacterAdded:Wait()
+    end
+    local hrp = char:WaitForChild("HumanoidRootPart")
+    return char, hrp
+end
+
+--// Find Tycoon
+local function FindTycoon()
+    for _, v in ipairs(workspace:GetChildren()) do
+        if v:IsA("Folder") and v.Name:match("Tycoon") then
+            local owner = v:FindFirstChild("Owner")
+            if owner and owner.Value == LocalPlayer then
+                return v
+            end
+        end
+    end
+end
+
+local Tycoon = FindTycoon()
+
+if not Tycoon then
+    WindUI:Notify({
+        Title = "Error",
+        Content = "Tycoon tidak ditemukan!",
+        Duration = 5
+    })
+    return
+end
+
+--// Cache Buttons
+local Buttons = {}
+
+local function RefreshButtons()
+    table.clear(Buttons)
+    local folder = Tycoon:FindFirstChild("Purchases")
+    if not folder then return end
+    for _, obj in ipairs(folder:GetDescendants()) do
+        if obj:IsA("Model") then
+            if obj:GetAttribute("Shown") and not obj:GetAttribute("Purchased") then
+                local part = obj:FindFirstChild("Button")
+                if part and part:IsA("BasePart") then
+                    table.insert(Buttons, part)
+                end
+            end
+        end
+    end
+end
+
+local function Touch(part)
+    pcall(function()
+        local _, hrp = GetCharacter()
+        firetouchinterest(hrp, part, 0)
+        task.wait(0.05)
+        firetouchinterest(hrp, part, 1)
+    end)
+end
+
+--// Auto Buy Loop — delay nyambung
+task.spawn(function()
+    while true do
+        if State.Buy then
+            RefreshButtons()
+            for _, button in ipairs(Buttons) do
+                if button and button.Parent then
+                    Touch(button)
+                end
+            end
+        end
+        task.wait(State.Delay)
+    end
+end)
+
+--// Upgrade
+local function Upgrade()
+    for _, v in ipairs(Tycoon:GetDescendants()) do
+        if v:IsA("RemoteFunction") and v.Name == "Upgrade" then
+            pcall(function()
+                for i = 1, 50 do
+                    v:InvokeServer(i)
+                end
+            end)
+        end
+    end
+end
+
+task.spawn(function()
+    while true do
+        if State.Upgrade then
+            Upgrade()
+        end
+        task.wait(2)
+    end
+end)
+
+--// Fruit System
+local Trees = {}
+
+local function ScanTree()
+    table.clear(Trees)
+    for _, v in ipairs(workspace:GetDescendants()) do
+        if v:IsA("Model") and v.Name == "LemonTree" then
+            table.insert(Trees, v)
+        end
+    end
+end
+
+local function Collect(tree)
+    pcall(function()
+        local _, hrp = GetCharacter()
+        hrp.CFrame = tree:GetPivot() + Vector3.new(0, 5, 0)
+        for _, x in ipairs(tree:GetDescendants()) do
+            if x:IsA("ClickDetector") then
+                fireclickdetector(x)
+            end
+        end
+    end)
+end
+
+task.spawn(function()
+    while true do
+        if State.Fruit then
+            ScanTree()
+            for _, tree in ipairs(Trees) do
+                if tree.Parent then
+                    Collect(tree)
+                    task.wait(0.3)
+                end
+            end
+        end
+        task.wait(1)
+    end
+end)
+
+--// Auto CashDrop
+local function AutoCashDrop()
+    local _, hrp = GetCharacter()
+    if not hrp then return end
+
+    local originalCF = hrp.CFrame
+
+    -- Cari folder CashDrop di Workspace
+    local dropFolder = workspace:FindFirstChild("CashDrop")
+    if not dropFolder then return end
+
+    -- Kumpulin semua CashDrop part/model
+    local drops = {}
+    for _, v in ipairs(dropFolder:GetChildren()) do
+        if v.Name == "CashDrop" then
+            table.insert(drops, v)
+        end
+    end
+
+    if #drops == 0 then return end
+
+    -- Teleport ke tiap drop lalu ambil
+    for _, drop in ipairs(drops) do
+        if drop and drop.Parent then
+            pcall(function()
+                local pos
+                if drop:IsA("BasePart") then
+                    pos = drop.CFrame
+                elseif drop:IsA("Model") then
+                    if drop.PrimaryPart then
+                        pos = drop:GetPivot()
+                    else
+                        local part = drop:FindFirstChildWhichIsA("BasePart")
+                        if part then pos = part.CFrame end
+                    end
+                end
+
+                if pos then
+                    hrp.CFrame = pos + Vector3.new(0, 3, 0)
+                    task.wait(0.15)
+                end
+            end)
+        end
+    end
+
+    -- Balik ke posisi semula
+    task.wait(0.1)
+    hrp.CFrame = originalCF
+end
+
+task.spawn(function()
+    while true do
+        if State.CashDrop then
+            AutoCashDrop()
+        end
+        task.wait(State.Delay) -- ikut delay slider
+    end
+end)
+
+--// ============ UI ============
+
+--// Main Tab
+local AutoSection = MainTab:Section({
+    Title = "Auto Features",
+    Open  = true,
+})
+
+local SettingsSection = MainTab:Section({
+    Title = "Settings",
+    Open  = true,
+})
+
+AutoSection:Toggle({
+    Title   = "Auto Buy",
+    Default = false,
+    Callback = function(v)
+        State.Buy = v
+    end
+})
+
+AutoSection:Toggle({
+    Title   = "Auto Upgrade",
+    Default = false,
+    Callback = function(v)
+        State.Upgrade = v
+    end
+})
+
+AutoSection:Toggle({
+    Title   = "Auto Fruit",
+    Default = false,
+    Callback = function(v)
+        State.Fruit = v
+    end
+})
+
+AutoSection:Toggle({
+    Title   = "Auto CashDrop",
+    Default = false,
+    Callback = function(v)
+        State.CashDrop = v
+    end
+})
+
+SettingsSection:Slider({
+    Title   = "Delay (Buy & CashDrop)",
+    Min     = 0.1,
+    Max     = 2,
+    Default = 0.25,
+    Increment = 0.05,
+    Callback = function(v)
+        State.Delay = v
+    end
+})
+
+--// Misc Tab
+local ControlSection = MiscTab:Section({
+    Title = "Controls",
+    Open  = true,
+})
+
+ControlSection:Button({
+    Title = "Emergency Stop",
+    Callback = function()
+        State.Buy      = false
+        State.Upgrade  = false
+        State.Fruit    = false
+        State.CashDrop = false
+    end
+})
+
+ControlSection:Button({
+    Title = "Destroy GUI",
+    Callback = function()
+        WindUI:Destroy()
+    end
+})
+
+--// Ready
+WindUI:Notify({
+    Title   = "Faltix Hub",
+    Content = "Powered By Attala | Ready!",
+    Duration = 4,
+})
